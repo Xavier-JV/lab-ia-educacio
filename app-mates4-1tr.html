@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mates 4t ESO - Primer Trimestre</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- KaTeX per a fórmules matemàtiques -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+    <style>
+        body { background-color: #f8fafc; }
+        .btn-modern { transition: all 0.2s ease-in-out; }
+        .btn-modern:hover { transform: translateY(-2px); }
+        .math-text { font-size: 1.15rem; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="text-slate-800 font-sans antialiased">
+
+    <div id="app" class="max-w-2xl mx-auto pt-6 px-4 pb-12"></div>
+
+    <script>
+        // --- 1. ESTAT DE L'APLICACIÓ ---
+        const state = {
+            screen: 'home', 
+            mode: '', 
+            topicId: null,
+            questionCount: 0,
+            totalAnswered: 0,
+            maxQuestions: 10,
+            score: 0,
+            currentQuestion: null,
+            isAnswered: false,
+            isCorrect: false,
+            userAnswer: null,
+            questionPool: [], 
+            topicStats: {},
+            lastIndices: {} 
+        };
+
+        // --- 2. UTILITATS I GENERADORS ---
+        function shuffle(array) {
+            let currentIndex = array.length, randomIndex;
+            while (currentIndex > 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+            }
+            return array;
+        }
+
+        // Funció CRÍTICA per renderitzar el KaTeX després de carregar el contingut
+        function triggerMath() {
+            setTimeout(() => {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: "$$", right: "$$", display: true},
+                        {left: "$", right: "$", display: false}
+                    ],
+                    throwOnError: false
+                });
+            }, 10);
+        }
+
+        function genReals() {
+            const types = [
+                { val: "5", ans: "Natural", exp: "És un enter positiu ($\\mathbb{N}$)." },
+                { val: "-8", ans: "Enter", exp: "Enter negatiu ($\\mathbb{Z}$)." },
+                { val: "\\frac{3}{4}", ans: "Racional", exp: "Fracció d'enters ($\\mathbb{Q}$)." },
+                { val: "2.5", ans: "Racional", exp: "Decimal exacte ($\\mathbb{Q}$)." },
+                { val: "\\sqrt{2}", ans: "Irracional", exp: "Arrel no exacta ($\\mathbb{I}$)." },
+                { val: "\\pi", ans: "Irracional", exp: "Constant no periòdica ($\\mathbb{I}$)." },
+                { val: "\\sqrt{16}", ans: "Natural", exp: "$\\sqrt{16}=4$, és natural ($\\mathbb{N}$)." },
+                { val: "0.\\widehat{3}", ans: "Racional", exp: "Periòdic pur ($\\mathbb{Q}$)." },
+                { val: "-1.2\\widehat{6}", ans: "Racional", exp: "Periòdic mixt ($\\mathbb{Q}$)." },
+                { val: "e", ans: "Irracional", exp: "Nombre d'Euler ($\\mathbb{I}$)." }
+            ];
+            let idx; do { idx = Math.floor(Math.random() * types.length); } while (idx === state.lastIndices['reals']);
+            state.lastIndices['reals'] = idx;
+            const item = types[idx];
+            const opts = ["Natural", "Enter", "Racional", "Irracional"];
+            return { q: `Classifica: $${item.val}$`, type: "options", options: opts, correct: opts.indexOf(item.ans), feedback: item.exp, topicId: 'reals' };
+        }
+
+        function genRadicals() {
+            const cases = [
+                { q: "\\sqrt{12} + \\sqrt{27}", ans: "5\\sqrt{3}", exp: "$2\\sqrt{3} + 3\\sqrt{3} = 5\\sqrt{3}$" },
+                { q: "\\sqrt{8} + \\sqrt{18}", ans: "5\\sqrt{2}", exp: "$2\\sqrt{2} + 3\\sqrt{2} = 5\\sqrt{2}$" },
+                { q: "\\sqrt{20} + \\sqrt{45}", ans: "5\\sqrt{5}", exp: "$2\\sqrt{5} + 3\\sqrt{5} = 5\\sqrt{5}$" },
+                { q: "\\sqrt{50} - \\sqrt{8}", ans: "3\\sqrt{2}", exp: "$5\\sqrt{2} - 2\\sqrt{2} = 3\\sqrt{2}$" }
+            ];
+            let idx; do { idx = Math.floor(Math.random() * cases.length); } while (idx === state.lastIndices['radicals']);
+            state.lastIndices['radicals'] = idx;
+            const item = cases[idx];
+            let opts = shuffle([`$${item.ans}$`, `$2\\sqrt{5}$`, `$6\\sqrt{3}$`, `$10\\sqrt{2}$`]);
+            return { q: `Simplifica: $${item.q}$`, type: "options", options: opts, correct: opts.indexOf(`$${item.ans}$`), feedback: item.exp, topicId: 'radicals' };
+        }
+
+        function genIntervals() {
+            const a = Math.floor(Math.random() * 6) - 3;
+            const b = a + 4;
+            const item = { ineq: `${a} \\le x < ${b}`, int: `[${a}, ${b})`, exp: "Claudàtor per $\\le$, parèntesi per $<$." };
+            let opts = shuffle([`$${item.int}$`, `$(${a}, ${b})$`, `$[${a}, ${b}]$`, `$(${a}, ${b}]$`]);
+            return { q: `Interval per a $${item.ineq}$:`, type: "options", options: opts, correct: opts.indexOf(`$${item.int}$`), feedback: item.exp, topicId: 'intervals' };
+        }
+
+        // --- TEMES RECUPERATS ---
+        function genPowers() {
+            const basesSquares = [4, 9, 16, 25, 36, 49, 64, 81, 100];
+            const val = basesSquares[Math.floor(Math.random() * basesSquares.length)];
+            const ans = Math.sqrt(val);
+            return { q: `Calcula el valor exacte de: $${val}^{1/2}$`, type: "input", correct: ans.toString(), feedback: `$${val}^{1/2}$ equival a l'arrel quadrada $\\sqrt{${val}}$, que és ${ans}.`, topicId: 'potencies' };
+        }
+
+        function genScientific() {
+            const mantissa = (Math.floor(Math.random() * 80) + 11) / 10;
+            const exp = Math.floor(Math.random() * 6) + 2;
+            const res = (mantissa * Math.pow(10, exp)).toLocaleString('de-DE');
+            const correctOpt = `$${mantissa} \\times 10^{${exp}}$`;
+            let opts = shuffle([correctOpt, `$${mantissa} \\times 10^{${exp-1}}$`, `$${(mantissa*10).toFixed(1).replace('.0','')} \\times 10^{${exp}}$`, `$${mantissa} \\times 10^{${exp+1}}$`]);
+            return { q: `Passa a notació científica: $${res}$`, type: "options", options: opts, correct: opts.indexOf(correctOpt), feedback: `La notació científica requereix moure la coma perquè quedi un sol nombre entre 1 i 9 davant la coma.`, topicId: 'cientifica' };
+        }
+
+        function genErrors() {
+            const real = Math.floor(Math.random() * 5) * 50 + 100; 
+            const errAbs = Math.floor(Math.random() * 5) + 1;
+            const measured = real + errAbs;
+            return { q: `Si el valor real és $${real}$ i mesurem $${measured}$, quin és l'**error absolut**?`, type: "input", correct: errAbs.toString(), feedback: `L'error absolut és la diferència en positiu: $|${real} - ${measured}| = ${errAbs}$.`, topicId: 'errors' };
+        }
+
+        function genRationalize() {
+            return { q: `Racionalitza i simplifica: $\\frac{2}{\\sqrt{2}}$`, type: "options", options: ["$\\sqrt{2}$", "$2\\sqrt{2}$", "$\\frac{\\sqrt{2}}{2}$", "$1$"], correct: 0, feedback: "Es multipliquen numerador i denominador per $\\sqrt{2}$: ens queda $\\frac{2\\sqrt{2}}{2}$, que es simplifica a $\\sqrt{2}$.", topicId: 'racionalitzar' };
+        }
+
+        function genDecimals() {
+            return { q: `Tria la fracció generatriu irreductible de $0.\\widehat{3}$`, type: "options", options: ["$\\frac{1}{3}$", "$\\frac{3}{10}$", "$\\frac{1}{9}$", "$\\frac{33}{100}$"], correct: 0, feedback: "El decimal $0.\\widehat{3}$ es representa com $\\frac{3}{9}$, que simplificat dóna $\\frac{1}{3}$.", topicId: 'decimals' };
+        }
+
+        function genPowerProps() {
+            const bases = [2, 3, 5];
+            const b = bases[Math.floor(Math.random()*bases.length)];
+            const e1 = Math.floor(Math.random()*4)+2;
+            const e2 = Math.floor(Math.random()*3)+2;
+            return { q: `Aplica les propietats de les potències (multiplicació) i escriu el valor de l'exponent final: $${b}^${e1} \\cdot ${b}^${e2} = ${b}^{?}$`, type: "input", correct: (e1+e2).toString(), feedback: `En la multiplicació de potències amb la mateixa base, se sumen els exponents: $${e1} + ${e2} = ${e1+e2}$.`, topicId: 'proppotencies' };
+        }
+
+        function genApproximation() {
+            const num = (Math.random() * 10).toFixed(4);
+            const ans = parseFloat(num).toFixed(2);
+            return { q: `Arrodoneix el nombre $${num}$ a les **centèsimes** (2 decimals).`, type: "input", correct: ans.toString(), feedback: `Si el tercer decimal (mil·lèsimes) és 5 o superior, sumem 1 al segon decimal. Resultat: ${ans}`, topicId: 'arrodoniment' };
+        }
+
+        const topicsList = [
+            { id: 'reals', title: '1. Nombres Reals', gen: genReals, icon: '🔢' },
+            { id: 'intervals', title: '2. Intervals', gen: genIntervals, icon: '📏' },
+            { id: 'potencies', title: '3. Potències i Radicals', gen: genPowers, icon: '⚡' },
+            { id: 'cientifica', title: '4. Notació Científica', gen: genScientific, icon: '🔬' },
+            { id: 'errors', title: '5. Error Absolut', gen: genErrors, icon: '🎯' },
+            { id: 'radicals', title: '6. Suma/Resta Radicals', gen: genRadicals, icon: '➕' },
+            { id: 'racionalitzar', title: '7. Racionalització', gen: genRationalize, icon: '➗' },
+            { id: 'decimals', title: '8. Fraccions Generatrius', gen: genDecimals, icon: '🍰' },
+            { id: 'proppotencies', title: '9. Propietats Potències', gen: genPowerProps, icon: '📈' },
+            { id: 'arrodoniment', title: '10. Aproximació', gen: genApproximation, icon: '✂️' }
+        ];
+
+        // --- 3. CONTROLADORS ---
+        window.goHome = () => { state.screen = 'home'; updateDOM(); };
+        window.goTopics = () => { state.screen = 'topics'; updateDOM(); };
+        window.startRepas = () => { state.screen = 'exercise'; state.mode = 'repas'; resetStats(); nextQuestion(); };
+        window.startReptes = () => { state.screen = 'exercise'; state.mode = 'reptes'; resetStats(); nextQuestion(); };
+        
+        window.selectTopic = (id) => { 
+            state.topicId = id; 
+            state.screen = 'exercise'; 
+            state.mode = 'practicar';
+            resetStats(); 
+            state.questionPool = Array(10).fill(id);
+            nextQuestion(); 
+        };
+
+        function resetStats() {
+            state.score = 0; state.questionCount = 0; state.totalAnswered = 0; state.topicStats = {};
+        }
+
+        function nextQuestion() {
+            if (state.currentQuestion && state.mode === 'practicar' && !state.isCorrect) {
+                state.questionPool.push(state.currentQuestion.topicId); 
+            }
+            state.isAnswered = false; state.isCorrect = false; state.userAnswer = null;
+
+            if (state.mode === 'practicar') {
+                if (state.questionPool.length === 0) return endSession();
+                const tId = state.questionPool.shift();
+                const tObj = topicsList.find(t => t.id === tId) || topicsList[0];
+                state.currentQuestion = tObj.gen();
+            } else if (state.mode === 'reptes') {
+                if (state.questionCount >= state.maxQuestions) return endSession();
+                const tObj = topicsList[Math.floor(Math.random() * topicsList.length)];
+                state.currentQuestion = tObj.gen();
+            } else {
+                const tObj = topicsList[Math.floor(Math.random() * topicsList.length)];
+                state.currentQuestion = tObj.gen();
+            }
+            state.questionCount++;
+            updateDOM();
+        }
+
+        function evaluate() {
+            state.isAnswered = true;
+            state.totalAnswered++;
+            let tid = state.currentQuestion.topicId;
+            if (!state.topicStats[tid]) {
+                const t = topicsList.find(x => x.id === tid);
+                state.topicStats[tid] = { correct: 0, wrong: 0, name: t.title };
+            }
+            if (state.isCorrect) { state.score++; state.topicStats[tid].correct++; }
+            else { state.topicStats[tid].wrong++; }
+            updateDOM();
+        }
+
+        window.submitAnswerOption = (idx) => {
+            if (state.isAnswered) return;
+            state.userAnswer = idx;
+            state.isCorrect = (idx === state.currentQuestion.correct);
+            evaluate();
+        };
+
+        window.submitAnswerInput = () => {
+            if (state.isAnswered) return;
+            const val = document.getElementById('numInput').value.trim().replace(',', '.');
+            if (val === '') return;
+            state.userAnswer = val;
+            let clean = val.replace(/[a-zA-Z%\s]/g, '');
+            state.isCorrect = (Math.abs(parseFloat(clean) - parseFloat(state.currentQuestion.correct)) < 0.001);
+            evaluate();
+        };
+
+        function endSession() { state.screen = 'results'; updateDOM(); }
+
+        // --- 4. RENDER ---
+        function updateDOM() {
+            const app = document.getElementById('app');
+            if (state.screen === 'home') app.innerHTML = renderHome();
+            else if (state.screen === 'topics') app.innerHTML = renderTopics();
+            else if (state.screen === 'exercise') app.innerHTML = renderExercise();
+            else if (state.screen === 'results') app.innerHTML = renderResults();
+            triggerMath(); // Obligatori per processar el LaTeX nou
+        }
+
+        function renderHome() {
+            return `
+                <div class="text-center mt-10 animate-fade-in">
+                    <h1 class="text-3xl font-black text-slate-800 mb-8">Mates 4t ESO</h1>
+                    <div class="flex flex-col gap-4 max-w-xs mx-auto">
+                        <button onclick="goTopics()" class="btn-modern bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg">Practicar Temes</button>
+                        <button onclick="startRepas()" class="btn-modern bg-emerald-500 text-white font-bold py-4 rounded-2xl shadow-lg">Repàs Infinit</button>
+                        <button onclick="startReptes()" class="btn-modern bg-purple-600 text-white font-bold py-4 rounded-2xl shadow-lg">Reptes (10 Preguntes)</button>
+                    </div>
+                </div>`;
+        }
+
+        function renderTopics() {
+            return `
+                <div class="mb-6 flex items-center gap-4"><button onclick="goHome()">⬅️</button><h2 class="text-2xl font-bold">Temes</h2></div>
+                ${topicsList.map(t => `<button onclick="selectTopic('${t.id}')" class="btn-modern w-full bg-white p-5 rounded-2xl shadow-sm border mb-3 flex items-center gap-4"><span class="text-2xl">${t.icon}</span><b>${t.title}</b></button>`).join('')}`;
+        }
+
+        function renderExercise() {
+            const q = state.currentQuestion;
+            let inter = '';
+            
+            if (q.type === 'options') {
+                inter = `<div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-6">` + q.options.map((opt, i) => {
+                    let cls = "btn-modern w-full text-left p-4 rounded-xl border-2 bg-white text-lg font-medium ";
+                    if (state.isAnswered) {
+                        if (i === q.correct) cls += "border-emerald-500 bg-emerald-50";
+                        else if (i === state.userAnswer) cls += "border-red-400 bg-red-50";
+                        else cls += "opacity-50";
+                    } else cls += "border-slate-200 hover:border-blue-400";
+                    return `<button onclick="submitAnswerOption(${i})" class="${cls}" ${state.isAnswered ? 'disabled' : ''}>${opt}</button>`;
+                }).join('') + `</div>`;
+            } else {
+                inter = `<div class="mt-6 flex flex-col md:flex-row gap-3">
+                    <input type="text" id="numInput" class="input-modern w-full md:w-2/3 p-4 rounded-xl text-xl text-center shadow-sm" placeholder="Escriu la resposta..." ${state.isAnswered ? 'disabled' : ''} value="${state.userAnswer || ''}">
+                    <button onclick="submitAnswerInput()" class="w-full md:w-1/3 btn-modern bg-blue-600 text-white font-bold p-4 rounded-xl hover:bg-blue-700 disabled:opacity-50" ${state.isAnswered ? 'disabled' : ''}>Comprovar</button>
+                </div>`;
+            }
+
+            let statsText = '';
+            if (state.mode === 'reptes') statsText = `Pregunta ${state.questionCount} / ${state.maxQuestions}`;
+            else if (state.mode === 'practicar') statsText = `Falten encertar: ${state.questionPool.length + (state.isAnswered && state.isCorrect ? 0 : 1)}`;
+            else statsText = `Encerts: ${state.score} / ${state.totalAnswered}`;
+
+            let nextBtnText = (state.mode === 'reptes' && state.questionCount === state.maxQuestions) ? "Veure Resultats" : "Següent";
+
+            return `
+                <div class="flex justify-between mb-4"><button onclick="goHome()" class="text-slate-400">Inici</button><span class="font-bold text-slate-500">${statsText}</span></div>
+                <div class="bg-white rounded-3xl shadow-xl p-8 border border-slate-100 animate-fade-in">
+                    <h3 class="text-xl md:text-2xl font-medium mb-6 math-text">${q.q}</h3>
+                    ${inter}
+                </div>
+                ${state.isAnswered ? `
+                <div class="mt-6 p-5 rounded-xl border ${state.isCorrect ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'} animate-fade-in">
+                    <p class="math-text">${q.feedback}</p>
+                    <button onclick="nextQuestion()" class="mt-4 w-full bg-slate-800 text-white py-3 rounded-xl font-bold">${nextBtnText}</button>
+                </div>` : (state.mode === 'repas' ? `<button onclick="endSession()" class="mt-4 w-full text-slate-400 underline text-sm">Finalitzar i veure resum</button>` : '')}`;
+        }
+
+        function renderResults() {
+            let s = []; let w = [];
+            for (let id in state.topicStats) {
+                let st = state.topicStats[id];
+                if (st.correct / (st.correct + st.wrong) >= 0.7) s.push(st.name); else w.push(st.name);
+            }
+            return `
+                <div class="text-center mt-10 bg-white p-10 rounded-3xl shadow-xl max-w-xl mx-auto animate-fade-in">
+                    <h2 class="text-3xl font-black mb-4">Resum de la Sessió</h2>
+                    <div class="text-5xl font-bold text-blue-600 mb-8">${state.score} / ${state.totalAnswered}</div>
+                    
+                    <div class="text-left bg-slate-50 p-6 rounded-2xl mb-8">
+                        ${s.length ? `<p class="text-emerald-600 font-bold">🌟 Punts forts: ${s.join(', ')}</p>` : ''}
+                        ${w.length ? `<p class="text-red-500 font-bold mt-4">📚 A repassar: ${w.join(', ')}</p>` : ''}
+                        ${!s.length && !w.length ? `<p class="text-slate-500">Sense dades suficients per detallar punts forts/febles.</p>` : ''}
+                    </div>
+
+                    <button onclick="goHome()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold">Tornar a l'Inici</button>
+                </div>`;
+        }
+
+        updateDOM();
+    </script>
+</body>
+</html>
